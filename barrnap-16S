@@ -88,7 +88,7 @@ done
 [ $# -eq 1 ] || usage_exit
 
 which barrnap >/dev/null || 
-    err_exit "command not found: barrnap (install from https://github.com/tseeman/barrnap)"
+    err_exit "command not found: barrnap (install from https://github.com/tseemann/barrnap)"
 (which uf && which uf-select && which uf-cut) >/dev/null || 
     err_exit "unfasta not found, install from https://github.com/zwets/unfasta"
 
