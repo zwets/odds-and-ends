@@ -1,0 +1,92 @@
+#!/bin/bash
+#
+#  relabel-newick - relabel nodes in a newick format file
+#  Copyright (C) 2017  Marco van Zwetselaar <io@zwets.it>
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#  Home: https://github.com/zwets/odds-and-ends
+
+# Function to exit this script with an error message on stderr
+err_exit() {
+    echo "$(basename "$0"): $*" >&2
+    exit 1
+}
+
+# Function to show usage information and exit
+usage_exit() {
+    echo "
+Usage: $(basename "$0") [OPTIONS] FILE
+
+  Read newick format FILE, apply the relabeling operations specified
+  on standard input and write the result to standard output.
+
+  OPTIONS
+   -h,--help       this help
+
+  Standard input must have lines with colon-separated values OLD:NEW.
+  They are sequentially applied to FILE.  Any node with label OLD in
+  FILE gets label NEW in the output.  NEW may be the empty string, in
+  which case the OLD label disappears altogether.
+
+  OLD is interpreted as an anchored extended regex(7). Anchored means
+  that '10' matches only the label '10', not e.g. '1010'.
+  
+  Labels must not contain any of these: semicolon, comma, parentheses,
+  and colon.  Not all Newick processing tools accept spaces in labels.
+  "
+    exit ${1:-1}
+}
+
+# Parse options
+
+unset REGEX
+while [ $# -ne 0 -a "$(expr "$1" : '\(.\).*')" = "-" ]; do
+    case $1 in
+    -h|--help)
+        usage_exit 0
+        ;;
+    *) usage_exit
+        ;;
+    esac
+    shift
+done
+
+# Execute main
+
+[ $# -eq 1 ] || usage_exit
+FILE="$1"
+
+TMPFILE="$(mktemp)"
+cp "$FILE" "$TMPFILE"
+
+while read LINE; do
+    [ -n "$LINE" ] || continue
+    [ $(expr index "$LINE" ',;()') -eq 0 ] || err_exit "invalid character on line (see $(basename $0) --help): $LINE"
+    [ $(echo "$LINE" | sed -e 's/[^:]*//g') = ':' ] || err_exit "line must contains one colon character: $LINE"
+    OLD="${LINE%%:*}"
+    NEW="${LINE##*:}"
+    TMPFILE_NEW="$(mktemp)"
+    sed -re "s:([,;:()])$OLD([,;:()]):\1$NEW\2:g" "$TMPFILE" > "$TMPFILE_NEW"
+    rm "$TMPFILE"
+    TMPFILE="$TMPFILE_NEW"
+done
+
+cat "$TMPFILE"
+
+rm -f "$TMPFILE"
+
+exit 0
+
+# vim: sts=4:sw=4:et:ai:si
