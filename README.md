@@ -8,6 +8,5 @@ Home: https://github.com/odds-and-ends
 
 | File            | Purpose |
 | --------------- | -------------------------------------------------------- |
-|`barrnap-16S`    | Quickly extract 16S from FASTQ using barrnap and unfasta |
 |`relabel-newick` | Relabel nodes in a Newick format tree (bash & sed)       |
 
