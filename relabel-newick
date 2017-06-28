@@ -30,12 +30,11 @@ parse_error() {
 }
 
 # Parser functions to traverse the tree
+# - Newick BNF syntax (condensed from Wikipedia entry)
+#   Tree   ::= Branch ';'
+#   Branch ::= ['('Branch [','Branch ...]')'] [name] [':'length]
 
-# Newick BNF syntax (condensed)
-#
-# Tree         ::= Branch ;
-# Branch       ::= [(Branch [,Branch ...])] [name] [:length]
-
+# Holds the current state of the parser
 TOK=""
 BUF=""
 
@@ -50,7 +49,7 @@ next_Token() {
         TOK="$C"
         BUF="$(expr "$BUF" : '^ *.\(.*\)')"
         ;;
-    *) 
+    *)
         TOK="$(expr "$BUF" : '^ *\([^(,):;]\+\).*')"
         BUF="$(expr "$BUF" : '^ *[^(,):;]\+\(.*\)')"
         ;;
@@ -58,20 +57,16 @@ next_Token() {
     true
 }
 
-# Parse and output next token "$1", erroring if it is not there
-parse() {
-    if [ $# -eq 0 ] || [ "$TOK" = "$1" ]; then
-        printf "$TOK"
-    else
-        parse_error "expecting '$1'"
-    fi
+# Try and parse next token, which if $1 is given, must equal $1, else false
+try_parse() {
+    [ $# -ne 1 ] || [ "$TOK" = "$1" ] || return 1
+    printf "$TOK"
     next_Token
 }
 
-# Top-most level is the three (assumes next_Token has been called once)
 parse_Tree() {
     parse_Branch
-    parse ';'
+    parse_Char ';'
 }
 
 parse_Branch() {
@@ -81,50 +76,63 @@ parse_Branch() {
 }
 
 opt_parse_List() {
-    [ "$TOK" = '(' ] && parse '(' && parse_Branch && opt_parse_Branches && parse ')' ||
+    try_parse '(' && parse_Branch && opt_parse_Branches && parse_Char ')' ||
     true
 }
 
 opt_parse_Branches() {
-    [ "$TOK" = ',' ] && parse ',' && parse_Branch && opt_parse_Branches || 
+    try_parse ',' && parse_Branch && opt_parse_Branches ||
     true
 }
 
 opt_parse_Name() {
-    expr "$TOK" : '[(,):;]' >/dev/null || {
-        printf "$TOK" | sed -re "$EDIT_STRING"
-        next_Token
-    }
+    expr "$TOK" : '[^(,):;]*' >/dev/null && printf "$TOK" | sed -re "$EDIT_STRING" && next_Token ||
+    true
 }
 
 opt_parse_Length() {
-    [ "$TOK" = ':' ] && parse ':' && parse_Length ||
+    try_parse ':' && parse_Length ||
     true
 }
 
 parse_Length() {
-    local N="$(expr "$TOK" : '^\([0-9]\+\(\.[0-9]\+\)\?\)$')" && parse "$N" || parse_error "expected number"
+    expr "$TOK" : '^\([0-9]\+\(\.[0-9]\+\)\?\)$' >/dev/null && printf "$TOK" && next_Token ||
+    parse_error "expected number"
+}
+
+parse_Char() {
+    try_parse "$1" || parse_error "expecting '$1'"
 }
 
 # Function to show usage information and exit
 usage_exit() {
     echo "
-Usage: $(basename "$0") [OPTIONS] [FILE]
+Usage: $(basename "$0") [OPTIONS] FILE
 
   Read newick format FILE, apply the relabeling operations specified
-  on standard input and write the result to standard output.
+  on standard input, and write the result to standard output.
 
   OPTIONS
    -v,--verbose  produce verbose output on stderr
    -h,--help     this help
 
   Standard input must have lines with colon-separated values OLD:NEW,
-  where OLD and NEW are interpreted by sed's substitute command and
-  applied in turn to each label in the Newick tree.
+  where OLD and NEW are interpreted by sed's substitute command.  OLD
+  is a modern regex(7) that will be matched against each node label in
+  turn.  The first match is replaced by NEW.  NEW may contain back
+  references, and it may be suffixed with ':g' for global find/replace.
 
   Labels must not contain any of these: semicolon, comma, parentheses,
   and colon.  They may contain spaces but note that not all Newick
   processing tools tolerate whitespace.
+
+  EXAMPLES
+  $ echo '[0-9]\+:' | $(basename "$0") file.newick
+    removes the first occurring number from every label
+  $ echo '([0-9]\+):X\1:g' | ...
+    prepends X to every number in every label
+  $ echo '^([0-9]\+)$:NR\1' | ...
+    prepends NR to every label that is entirely numeric
   "
     exit ${1:-1}
 }
@@ -133,35 +141,31 @@ Usage: $(basename "$0") [OPTIONS] [FILE]
 
 while [ $# -ne 0 -a "$(expr "$1" : '\(.\).*')" = "-" ]; do
     case $1 in
-    -v|--verbose)
-        VERBOSE=1
-        ;;
-    -h|--help)
-        usage_exit 0
-        ;;
-    *) usage_exit
-        ;;
+    -v|--verbose) VERBOSE=1 ;;
+    -h|--help) usage_exit 0 ;;
+    *) usage_exit ;;
     esac
     shift
 done
 
-# Execute main
+# Main
 
 # Read the input file into buf
 [ $# -eq 1 ] || usage_exit
 [ -f "$1" ] || err_exit "no such file: $1"
 BUF="$(cat "$1")"
 
-# Process the instructions on standard input, each having format OLD:NEW.
+# Process the instructions on standard input, appending them to a sed 'program'
 while read LINE; do
     [ -n "$LINE" ] || continue
-    [ $(expr index "$LINE" ',;()') -eq 0 ] || err_exit "invalid character on line (see $(basename $0) --help): $LINE"
-    [ $(echo "$LINE" | sed -e 's/[^:]*//g') = ':' ] || err_exit "line must contains one colon character: $LINE"
+    expr "$LINE" : '.*:' >/dev/null ||
+        err_exit "line contains no colon character: $LINE"
     OLD="${LINE%%:*}"
     NEW="${LINE##*:}"
-    EDIT_STRING="${EDIT_STRING:+$EDIT_STRING;}s:$OLD:$NEW:"
+    EDIT_STRING="${EDIT_STRING:+$EDIT_STRING;}s:$OLD:$NEW:g"
 done
 
+# Do the actual work
 next_Token
 parse_Tree
 echo
