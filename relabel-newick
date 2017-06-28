@@ -24,36 +24,118 @@ err_exit() {
     exit 1
 }
 
+# Function to exit this script on parse error
+parse_error() {
+    err_exit "parse error${1:+: $1} at: ${TOK}${BUF}"
+}
+
+# Parser functions to traverse the tree
+
+# Newick BNF syntax (condensed)
+#
+# Tree         ::= Branch ;
+# Branch       ::= [(Branch [,Branch ...])] [name] [:length]
+
+TOK=""
+BUF=""
+
+# Tokeniser - tokens are the five characters ( ) , : , or a sequence of anything else
+next_Token() {
+    local C="$(expr "$BUF" : '^ *\(.\?\).*')"
+    case "$C" in
+    '') TOK=''
+        BUF=''
+        ;;
+    '('|','|')'|':'|';')
+        TOK="$C"
+        BUF="$(expr "$BUF" : '^ *.\(.*\)')"
+        ;;
+    *) 
+        TOK="$(expr "$BUF" : '^ *\([^(,):;]\+\).*')"
+        BUF="$(expr "$BUF" : '^ *[^(,):;]\+\(.*\)')"
+        ;;
+    esac
+    true
+}
+
+# Parse and output next token "$1", erroring if it is not there
+parse() {
+    if [ $# -eq 0 ] || [ "$TOK" = "$1" ]; then
+        printf "$TOK"
+    else
+        parse_error "expecting '$1'"
+    fi
+    next_Token
+}
+
+# Top-most level is the three (assumes next_Token has been called once)
+parse_Tree() {
+    parse_Branch
+    parse ';'
+}
+
+parse_Branch() {
+    opt_parse_List
+    opt_parse_Name
+    opt_parse_Length
+}
+
+opt_parse_List() {
+    [ "$TOK" = '(' ] && parse '(' && parse_Branch && opt_parse_Branches && parse ')' ||
+    true
+}
+
+opt_parse_Branches() {
+    [ "$TOK" = ',' ] && parse ',' && parse_Branch && opt_parse_Branches || 
+    true
+}
+
+opt_parse_Name() {
+    expr "$TOK" : '[(,):;]' >/dev/null || {
+        printf "$TOK" | sed -re "$EDIT_STRING"
+        next_Token
+    }
+}
+
+opt_parse_Length() {
+    [ "$TOK" = ':' ] && parse ':' && parse_Length ||
+    true
+}
+
+parse_Length() {
+    local N="$(expr "$TOK" : '^\([0-9]\+\(\.[0-9]\+\)\?\)$')" && parse "$N" || parse_error "expected number"
+}
+
 # Function to show usage information and exit
 usage_exit() {
     echo "
-Usage: $(basename "$0") [OPTIONS] FILE
+Usage: $(basename "$0") [OPTIONS] [FILE]
 
   Read newick format FILE, apply the relabeling operations specified
   on standard input and write the result to standard output.
 
   OPTIONS
-   -h,--help       this help
+   -v,--verbose  produce verbose output on stderr
+   -h,--help     this help
 
-  Standard input must have lines with colon-separated values OLD:NEW.
-  They are sequentially applied to FILE.  Any node with label OLD in
-  FILE gets label NEW in the output.  NEW may be the empty string, in
-  which case the OLD label disappears altogether.
+  Standard input must have lines with colon-separated values OLD:NEW,
+  where OLD and NEW are interpreted by sed's substitute command and
+  applied in turn to each label in the Newick tree.
 
-  OLD is interpreted as an anchored extended regex(7). Anchored means
-  that '10' matches only the label '10', not e.g. '1010'.
-  
   Labels must not contain any of these: semicolon, comma, parentheses,
-  and colon.  Not all Newick processing tools accept spaces in labels.
+  and colon.  They may contain spaces but note that not all Newick
+  processing tools tolerate whitespace.
   "
     exit ${1:-1}
 }
 
 # Parse options
 
-unset REGEX
 while [ $# -ne 0 -a "$(expr "$1" : '\(.\).*')" = "-" ]; do
     case $1 in
+    -v|--verbose)
+        VERBOSE=1
+        ;;
     -h|--help)
         usage_exit 0
         ;;
@@ -65,28 +147,23 @@ done
 
 # Execute main
 
+# Read the input file into buf
 [ $# -eq 1 ] || usage_exit
-FILE="$1"
+[ -f "$1" ] || err_exit "no such file: $1"
+BUF="$(cat "$1")"
 
-TMPFILE="$(mktemp)"
-cp "$FILE" "$TMPFILE"
-
+# Process the instructions on standard input, each having format OLD:NEW.
 while read LINE; do
     [ -n "$LINE" ] || continue
     [ $(expr index "$LINE" ',;()') -eq 0 ] || err_exit "invalid character on line (see $(basename $0) --help): $LINE"
     [ $(echo "$LINE" | sed -e 's/[^:]*//g') = ':' ] || err_exit "line must contains one colon character: $LINE"
     OLD="${LINE%%:*}"
     NEW="${LINE##*:}"
-    TMPFILE_NEW="$(mktemp)"
-    sed -re "s:([,;:()])$OLD([,;:()]):\1$NEW\2:g" "$TMPFILE" > "$TMPFILE_NEW"
-    rm "$TMPFILE"
-    TMPFILE="$TMPFILE_NEW"
+    EDIT_STRING="${EDIT_STRING:+$EDIT_STRING;}s:$OLD:$NEW:"
 done
 
-cat "$TMPFILE"
-
-rm -f "$TMPFILE"
-
-exit 0
+next_Token
+parse_Tree
+echo
 
 # vim: sts=4:sw=4:et:ai:si
