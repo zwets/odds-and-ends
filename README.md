@@ -1,12 +1,13 @@
 # odds-and-ends
 
-Miscellaneous docs and scripts that needed a place to put them.
+Miscellaneous docs and scripts that need a place to put them.
 
-Home: https://github.com/odds-and-ends
+Home: https://github.com/zwets/odds-and-ends
 
 ## Files
 
 | File            | Purpose |
-| --------------- | -------------------------------------------------------- |
-|`relabel-newick` | Relabel nodes in a Newick format tree (bash & sed)       |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+|`ident-16s`      | Perform bacterial 16S rRNA identification using `barrnap`, `BLAST` and the `16SMicrobial` database (moved to <https://github.com/zwets/ident-16s>). |
+|`relabel-newick` | Relabel nodes in a Newick format tree (moved to <https://github.com/zwets/phylo-utils>).                                                            |
 
