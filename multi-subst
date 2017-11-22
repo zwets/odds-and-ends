@@ -1,0 +1,151 @@
+#!/bin/sh
+#
+#  multi-subst - apply a list of sets of substitutions to an input file
+#  Copyright (C) 2017  Marco van Zwetselaar <io@zwets.it>
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+# Function to exit this script with an error message on stderr
+err_exit() {
+    echo "$(basename "$0"): $*" >&2
+    exit 1
+}
+
+# Function to show usage information and exit
+usage_exit() {
+    echo "
+Usage: $(basename $0) [OPTIONS] TABLE FILE
+  
+  Apply in turn each row of substitutions listed in TABLE to FILE.
+
+  OPTIONS
+   -d,--delim CHAR  Specify the column delimiter in TABLE (default TAB)
+   -o,--out OUT     Write output to OUT.1 OUT.2 ... OUT.n instead of stdout
+   -n,--no-clobber  Do not overwrite existing OUT.1 ... OUT.n files
+   -s,--slow        Use a separate sed command for each row (implied by -o)
+
+  TABLE must have a header row listing k patterns p[k], followed by n rows
+  r[n] each listing k substitutes r[n][k].  Each r[n] is in turn applied to
+  FILE, replacing every occurrence of each pattern p[k] by its corresponding
+  substitute r[n][k].
+
+  Substitution is performed using sed(1) substitution rules, hence patterns
+  are interpreted as extended regular expressions and substitutes can use
+  back-references.
+
+  The output is a concatenation of n versions of FILE, one for each row of
+  TABLE.  Alternatively, with option -o, output is written to n separate
+  OUT files.
+" >&2
+    exit ${1:-1}
+}
+
+# Parse options
+
+DELIM='\t'
+unset OUTFILES NO_CLOBBER SLOW
+while [ $# -ne 0 -a "$(expr "$1" : '\(.\)..*')" = "-" ]; do
+    case $1 in
+    --delim*=*)
+        DELIM="${1#--delim*=}"
+        ;;
+    -d|--delim*)
+        shift
+        DELIM="$1"
+        ;;
+    --out*=*)
+        OUTBASE="${1#--out*=}"
+        SLOW=1
+        ;;
+    -o|--out*)
+        shift
+        OUTBASE="$1"
+        SLOW=1
+        ;;
+    -s|--slow)
+        SLOW=1
+        ;;
+    -n|--no-clob*)
+        NO_CLOBBER=1
+        ;;
+    -h|--help)
+        usage_exit 0
+        ;;
+    *) usage_exit
+        ;;
+    esac
+    shift
+done
+
+[ $# -eq 2 ] || usage_exit
+
+# We generate a sed script using awk, and feed it to sh.
+
+# To make quoting easier we use variable Q for single quote, and S for
+# the sed substitution separator character.  S must be a character which
+# does not occur anywhere in TABLE.  We pick ASCII 1 which is barely legal
+# but does the trick.
+
+if [ -z "$SLOW" ]; then
+
+    # The plain variant without outfiles and one potentially large sed statement per row
+
+    awk -F "$DELIM" -b -O -v FILE="$2" -v Q="'" -v S="\x01" '
+        NR==1 { for (j=1; j<=NF; ++j) PAT[j] = $j; }
+        NR!=1 { printf "sed -r ";
+                for (j=1; j<=NF; ++j) printf "-e " Q "s" S PAT[j] S $j S "g" Q " ";
+                print Q FILE Q;
+          }' "$1"
+
+elif [ -z "$OUTBASE" ]; then
+
+    # The 'slow' variant without outfiles but with one sed statement per column
+
+    awk -F "$DELIM" -b -O -v FILE="$2" -v A="'" -v Q='"' -v S="\x01" '
+    BEGIN { print "TEMP_IN=" Q "$(mktemp)" Q;
+            print "TEMP_OUT=" Q "$(mktemp)" Q; }
+    NR==1 { for (j=1; j<=NF; ++j) PAT[j] = $j; }
+    NR!=1 { printf "cp " Q FILE Q " " Q "$TEMP_OUT" Q " && ";
+            for (j=1; j<=NF; ++j) {
+                print "cp " Q "$TEMP_OUT" Q " " Q "$TEMP_IN" Q " && ";
+                printf "sed -r -e " A "s" S PAT[j] S $j S "g" A " " Q "$TEMP_IN" Q " > " Q "$TEMP_OUT" Q " && "
+            }
+            print "cat " Q "$TEMP_OUT" Q;
+          }
+    END   { print "rm -f " Q "$TEMP_IN" Q " " Q "$TEMP_OUT" Q }' "$1"
+
+else 
+
+    # The necessarily 'slow' variant producing one output file per line
+
+    awk -F "$DELIM" -b -O -v FILE="$2" -v A="'" -v Q='"' -v S="\x01" -v OUTBASE="${OUTBASE}" -v NOCL="${NO_CLOBBER:-0}" '
+    BEGIN { print "TEMP_IN=" Q "$(mktemp)" Q;
+            print "TEMP_OUT=" Q "$(mktemp)" Q; }
+    NR==1 { for (j=1; j<=NF; ++j) PAT[j] = $j; }
+    NR!=1 { print "OUT_FILE=" Q OUTBASE "." NR Q;
+            if (NOCL) print "if [ -f " Q "$OUT_FILE" Q " ]; then echo " Q "File exists, not clobbering: $OUT_FILE" Q "; else";
+            printf "cp " Q FILE Q " " Q "$TEMP_OUT" Q " && ";
+            for (j=1; j<=NF; ++j) {
+                print "cp " Q "$TEMP_OUT" Q " " Q "$TEMP_IN" Q " && ";
+                printf "sed -r -e " A "s" S PAT[j] S $j S "g" A " " Q "$TEMP_IN" Q " > " Q "$TEMP_OUT" Q " && "
+            }
+            print "cp " Q "$TEMP_OUT" Q " " Q "$OUT_FILE" Q;
+            if (NOCL) print "fi";
+          }
+    END   { print "rm -f " Q "$TEMP_IN" Q " " Q "$TEMP_OUT" Q }' "$1"
+
+fi
+
+# vim: sts=4:sw=4:et:si:ai
