@@ -35,6 +35,7 @@ Usage: $(basename $0) [OPTIONS] TABLE FILE
    -o,--out OUT     Write output to OUT.1 OUT.2 ... OUT.n instead of stdout
    -n,--no-clobber  Do not overwrite existing OUT.1 ... OUT.n files
    -s,--slow        Use a separate sed command for each row (implied by -o)
+   -g,--gen-only    Output the genated script but do not execute it
 
   TABLE must have a header row listing k patterns p[k], followed by n rows
   r[n] each listing k substitutes r[n][k].  Each r[n] is in turn applied to
@@ -55,7 +56,7 @@ Usage: $(basename $0) [OPTIONS] TABLE FILE
 # Parse options
 
 DELIM='\t'
-unset OUTFILES NO_CLOBBER SLOW
+unset OUTFILES NO_CLOBBER SLOW GEN_ONLY
 while [ $# -ne 0 -a "$(expr "$1" : '\(.\)..*')" = "-" ]; do
     case $1 in
     --delim*=*)
@@ -79,6 +80,9 @@ while [ $# -ne 0 -a "$(expr "$1" : '\(.\)..*')" = "-" ]; do
         ;;
     -n|--no-clob*)
         NO_CLOBBER=1
+        ;;
+    -g|--gen*)
+        GEN_ONLY=1
         ;;
     -h|--help)
         usage_exit 0
@@ -146,6 +150,12 @@ else
           }
     END   { print "rm -f " Q "$TEMP_IN" Q " " Q "$TEMP_OUT" Q }' "$1"
 
+    # Pipe the output through either cat or sh to either show or do the work
+
+fi | if [ -n "$GEN_ONLY" ]; then
+    cat
+else
+    sh
 fi
 
 # vim: sts=4:sw=4:et:si:ai
