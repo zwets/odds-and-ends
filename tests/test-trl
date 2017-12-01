@@ -1,0 +1,157 @@
+#!/bin/sh
+#
+#  test-trl - Unit tests for the trl script.
+#  Copyright (C) 2017  Marco van Zwetselaar <io@zwets.it>
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+# Abort on error
+set -e
+
+# Function to exit this script with an error message on stderr
+err_exit() {
+    echo "$(basename "$0"): $*" >&2
+    exit 1
+}
+
+# Function emits $* to stderr unless QUIET is set
+emit() {
+    [ -n "$QUIET" ] || echo "$*" >&2
+}
+
+# Function to show usage information and exit
+usage_exit() {
+    echo "
+Usage: $(basename $0) [OPTIONS]
+
+  Tests the $TRL script.
+
+  OPTIONS
+   -q  Be quiet
+" >&2
+    exit ${1:-1}
+}
+
+# Check args
+
+if [ $# -eq 1 ] && [ "$1" = "-q" ]; then
+    QUIET=1
+elif [ $# -ne 0 ]; then
+    usage_exit
+fi
+
+# Check for trl
+
+TRL="../trl"
+[ -x "$TRL" ] || err_exit "not found: $TRL"
+
+# Test each codon translation
+
+CORRECT_DNA="tttttcttattgtcttcctcatcgtattactaatagtgttgctgatggcttctcctactgcctcccccaccgcatcaccaacagcgtcgccgacggattatcataatgactaccacaacgaataacaaaaagagtagcagaagggttgtcgtagtggctgccgcagcggatgacgaagagggtggcggaggg"
+CORRECT_RNA="uuuuucuuauugucuuccucaucguauuacuaauaguguugcugauggcuucuccuacugccucccccaccgcaucaccaacagcgucgccgacggauuaucauaaugacuaccacaacgaauaacaaaaagaguagcagaaggguugucguaguggcugccgcagcggaugacgaagaggguggcggaggg"
+CORRECT_AMI="FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG"
+CORRECT_TLA="PhePheLeuLeuSerSerSerSerTyrTyr******CysCys***TrpLeuLeuLeuLeuProProProProHisHisGlnGlnArgArgArgArgIleIleIleMetThrThrThrThrAsnAsnLysLysSerSerArgArgValValValValAlaAlaAlaAlaAspAspGluGluGlyGlyGlyGly"
+
+ALL_CODONS=""
+for b1 in T C A G; do
+    for b2 in T C A G; do
+        for b3 in T C A G; do
+            ALL_CODONS="${ALL_CODONS}$b1$b2$b3"
+        done
+    done
+done
+
+# Test translation - immediate, stdin
+
+emit "Test immediate DNA"
+TEST_AMI="$($TRL "$ALL_CODONS")"
+[ "$CORRECT_AMI" = "$TEST_AMI" ] || err_exit "Translated immediate string does not match: \n$CORRECT_AMI\n$TEST_AMI"
+
+emit "Test stdin DNA"
+TEST_AMI="$(echo "$ALL_CODONS" | $TRL)"
+[ "$CORRECT_AMI" = "$TEST_AMI" ] || err_exit "Translated stdin string does not match: \n$CORRECT_AMI\n$TEST_AMI"
+
+emit "Test translation to TLA"
+TEST_TLA="$(echo "$ALL_CODONS" | $TRL -l)"
+[ "$CORRECT_TLA" = "$TEST_TLA" ] || err_exit "Translated string does not match TLA: \n$CORRECT_TLA\n$TEST_TLA"
+
+emit "Test conversion to TLA"
+TEST_TLA="$($TRL -l "$CORRECT_AMI")"
+[ "$CORRECT_TLA" = "$TEST_TLA" ] || err_exit "Converted TLA string does not match: \n$CORRECT_TLA\n$TEST_TLA"
+
+emit "Test conversion from TLA"
+TEST_AMI="$($TRL "$CORRECT_TLA")"
+[ "$CORRECT_AMI" = "$TEST_AMI" ] || err_exit "Converted AA to TLA string does not match: \n$CORRECT_AMI\n$TEST_AMI"
+
+emit "Test reverse translation"
+TEST_DNA="$($TRL -r "$CORRECT_AMI")"
+echo "$CORRECT_DNA" | grep -Eq "^$TEST_DNA" || err_exit "Reverse translation does not match DNA: \n$TEST_DNA"
+
+emit "Test reverse translation from TLA"
+TEST_DNA="$($TRL -r -l "$CORRECT_TLA")"
+echo "$CORRECT_DNA" | grep -Eq "^$TEST_DNA" || err_exit "Reverse translation from TLA does not match DNA: \n$TEST_DNA"
+
+# Test each codon for forward and reverse translation
+
+emit "Test each codon for forward and reverse translation"
+for b1 in a c g t; do 
+    for b2 in a c g t; do 
+        for b3 in a c g t; do 
+            codon="$b1$b2$b3" 
+            amino="$(echo "$codon" | $TRL)"
+            amino3="$(echo "$codon" | $TRL -l)"
+
+            reverse="$(echo "$amino" | $TRL -r)"
+            reverse3="$(echo "$amino3" | $TRL -l -r)"
+            [ "$reverse" = "$reverse3" ] || err_exit "Reverse '$reverse' not equal to '$reverse3' for codon '$codon'"
+
+            emit "  $codon => $amino = $amino3 => $reverse"
+
+            regex="^$reverse\$"
+            echo "$codon" | grep -Eq "$regex" || echo "Codon '$codon' does not match regex '$regex'"
+        done
+    done
+done
+
+# Test frames and files
+
+revert() {
+    awk '{for(i=length($0); i>=1; --i) printf "%c", substr($0,i,1); } END {printf "\n"}' "$@"
+    }
+    
+DNA_FILE="$(mktemp --suffix=".dna")"
+REV_FILE="${DNA_FILE}.rev"
+AMI_FILE="${DNA_FILE}.aa"
+RAM_FILE="${DNA_FILE}.aa.rev"
+
+INS=""
+for i in 1 2 3; do
+    emit "Test frames -$i and $i"
+
+    echo "${INS}${CORRECT_DNA}" > "$DNA_FILE"
+    echo "${CORRECT_DNA}${INS}" | revert > "$REV_FILE"
+
+    $TRL -f -$i "$DNA_FILE" > "$AMI_FILE"
+    $TRL -f $i "$REV_FILE" | revert > "$RAM_FILE"
+
+    diff -w "$AMI_FILE" "$RAM_FILE" || err_exit "should not differ"
+    INS="a$INS"
+done
+
+rm "$DNA_FILE" "$REV_FILE" "$AMI_FILE" "$RAM_FILE"
+
+emit "OK"
+
+# vim: sts=4:sw=4:et:si:ai
+
