@@ -38,6 +38,7 @@ Usage: $(basename $0) [OPTIONS] [SEQUENCE | FILE ...]
    -r, --reverse      Reverse translate AA to DNA (see below)
    -l, --tla          Write amino acids as three-letter abbrevations (TLAs)
    -a, --amino        Force interpret input as amino acids (when ambiguous)
+   -x, --extended     Allow degerate DNA alphabet (r, y, n, etc)
 
   Input may be mixed DNA and RNA sequences in upper or lowercase, or amino
   sequences in uppercase letters or as TLAs.  No spaces are allowed.  Input
@@ -59,6 +60,7 @@ F_REV=0
 REVERSE=0
 TLA=0
 AMINO=0
+EXTENDED=0
 
 # Parse options
 
@@ -80,6 +82,9 @@ while [ $# -ne 0 -a "$(expr "$1" : '\(.\)..*')" = "-" ]; do
         ;;
     -a|--amino)
         AMINO=1
+        ;;
+    -x|--extended)
+        EXTENDED=1
         ;;
     -f|--frame)
         shift
@@ -112,7 +117,7 @@ elif [ $# -eq 1 ] && [ ! -f "$1" ]; then
     echo "$1"
 else 
     cat "$@"
-fi | awk -b -O -v P="$(basename "$0")" -v S=$F_SHIFT -v C=$F_REV -v R=$REVERSE -v L=$TLA -v A=$AMINO '
+fi | awk -b -O -v P="$(basename "$0")" -v S=$F_SHIFT -v C=$F_REV -v R=$REVERSE -v L=$TLA -v A=$AMINO -v X=$EXTENDED '
     BEGIN { 
         # TR rna -> aa
 
@@ -141,6 +146,17 @@ fi | awk -b -O -v P="$(basename "$0")" -v S=$F_SHIFT -v C=$F_REV -v R=$REVERSE -
         # QHQH PPPP RRRR LLLL
         # EDED AAAA GGGG VVVV
         # *Y*Y SSSS *CWC LFLF
+
+        # Some binary synonyms using the extended alphabet
+        # :: r=ag y=ct s=cg k=gt m=ac w=at b=~a v=~t d=~c h=~g n=.
+        T["aar"] = "K"; T["car"] = "Q"; T["gar"] = "E"; T["uar"] = "*";
+        T["aay"] = "N"; T["cay"] = "H"; T["gay"] = "D"; T["uay"] = "Y";
+        T["uay"] = "Y"; T["ugy"] = "C"; T["uuy"] = "F"; T["uur"] = "L";
+        T["agr"] = "R"; T["agy"] = "S";
+        # Some universal synonyms using the extended alphabet
+        # (note there are many more)
+        T["cun"] = "L"; T["cgn"] = "R"; T["gun"] = "V"; T["ggn"] = "G";
+        T["acn"] = "T"; T["ccn"] = "P"; T["gcn"] = "A"; T["ucn"] = "S";
 
         # RTR: aa -> dna
 
@@ -174,7 +190,7 @@ fi | awk -b -O -v P="$(basename "$0")" -v S=$F_SHIFT -v C=$F_REV -v R=$REVERSE -
     }
     NR == 1 { # On line 1 determine input type and intention
 
-        if (!R && !A && ($0 ~ /^[ACGTUacgtu]*$/)) {
+        if (!R && !A && (X || $0 ~ /^[ACGTUacgtu]*$/)) {
             IN_TYPE="nt"; A = 0;
         } else if (!(R && L) && $0 ~ /^[ABCDEFGHIKLMNPQRSTVWYZ*]+$/) {
             IN_TYPE="aa"; A = 1;
