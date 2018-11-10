@@ -175,6 +175,29 @@ fi | awk -b -O -v P="$(basename "$0")" -v S=$F_SHIFT -v C=$F_REV -v R=$REVERSE -
         IT["Y"] = "ta[ct]";     IT["*"] = "(taa|tag|tga)";
         IT["C"] = "tg[ct]";     IT["W"] = "tgg";        IT["F"] = "tt[ct]";
 
+# RTR using degen bases
+#       A   GCT,GCC,GCA,GCG            GCN
+#       R   CGT,CGC,CGA,CGG,AGA,AGG    CGN,MGR
+#       N   AAT,AAC                    AAY
+#       D   GAT,GAC                    GAY
+#       C   TGT,TGC                    TGY
+#       Q   CAA,CAG                    CAR
+#       E   GAA,GAG                    GAR
+#       G   GGT,GGC,GGA,GGG            GGN
+#       H   CAT,CAC                    CAY
+#       I   ATT,ATC,ATA                ATH
+#       L   TTA,TTG,CTT,CTC,CTA,CTG    YTR,CTN
+#       K   AAA,AAG                    AAR
+#       M   ATG                        ATG
+#       F   TTT,TTC                    TTY
+#       P   CCT,CCC,CCA,CCG            CCN
+#       S   TCT,TCC,TCA,TCG,AGT,AGC    TCN,AGY
+#       T   ACT,ACC,ACA,ACG            ACN
+#       W   TGG                        TGG
+#       Y   TAT,TAC                    TAY
+#       V   GTT,GTC,GTA,GTG            GTN
+#       *   TAA,TGA,TAG                TAR,TRA 
+
         # A3: aa -> tla
 
         A3["A"] = "Ala"; A3["B"] = "Asx"; A3["C"] = "Cys"; A3["D"] = "Asp";
