@@ -235,7 +235,7 @@ fi | awk -b -O -v P="$(basename "$0")" -v S=$F_SHIFT -v C=$F_REV -v R=$REVERSE -
     }
 
     function err_exit(s) {
-        print P ":" s > "/dev/stderr"
+        print P ": " s > "/dev/stderr"
         exit 1
     }
     function trans(s,   t,r) {   # AWK local param idiom
