@@ -1,0 +1,116 @@
+#!/bin/sh
+#
+#  kma-retrieve - retrieves sequences from a KMA indexed database
+#
+#  Copyright (C) 2020  Marco van Zwetselaar <io@zwets.it>
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+export LC_ALL="C"
+
+err_exit() { 
+    echo "$(basename "$0"): $*" >&2 
+    exit 1 
+    }
+
+usage_exit() {
+    printf '
+Usage: %s [OPTIONS] DATABASE [-|ACCESSION ...]
+
+  Retrieves FASTA sequences by ACCESSION from kma indexed DATABASE.
+  If no accession is specified, retrieves all sequences.  If ACCESSION
+  is - then reads accessions from stdin, one per line.
+
+  OPTIONS
+   -o, --out-file=FILE  Write to FILE instead of stdout
+   -x, --fail-fast      Fail as soon as an ACCESSION fails to retrieve,
+                        rather than continuing with the next
+   -a, --only-all       Fail with no output at all if any ACCESSION fails
+   -v, --verbose        Also report successful retrievals on stderr
+
+  Exit code is zero if and only if all accessions were found.
+
+' $(basename "$0") >&2
+    exit ${1:-1}
+    }
+
+# Parse options
+
+OUT_FILE=/dev/stdout
+unset VERBOSE FAIL_FAST ONLY_ALL
+while [ $# -ne 0 -a "$(expr "$1" : '\(.\)..*')" = "-" ]; do
+    case $1 in
+    --out*=*)     OUT_FILE="${1##--out*=}" ;;
+    -o|--out*)    shift || usage_exit; OUT_FILE="$1" ;;
+    -x|--fail*)   FAIL_FAST=1 ;;
+    -a|--only*)   ONLY_ALL=1 ;;
+    -v|--verbose) VERBOSE=1 ;;
+    -h|--help)    usage_exit 0 ;;
+    *)            usage_exit ;;
+    esac
+    shift || usage_exit
+done
+
+# Parse DATABASE argument
+[ $# -ge 1 ] || usage_exit
+KMA_BASE="$1"
+shift
+
+# Check for database
+KMA_NAME="${KMA_BASE}.name"
+[ -f "${KMA_BASE}.seq.b" ] || err_exit "no such database: $KMA_BASE"
+[ -f "${KMA_NAME}" ] || err_exit "file missing from kma database: $KMA_NAME"
+
+# Check for kma
+kma -v >/dev/null 2>&1 || err_exit "kma not found"
+
+# If no arguments passed, just dump all 
+[ $# -gt 0 ] || kma seq2fasta -t_db "$KMA_BASE"
+
+# Else construct comma-separated list of index positions
+RET=0
+unset SEQS SEP
+while [ $# -gt 0 ]; do
+
+    ACC="$1"
+
+    # Handle dash by reading next line from stdin and not shift arg
+    [ "$ACC" = '-' ] && read ACC || shift
+
+    # Find the line number of the sequence with this accession in the .name file
+    NUM="$(cut -d' ' -f1 "$KMA_NAME" | grep -Fxn -- "$ACC" | cut -d':' -f1)"
+
+    # Detect failure and possibly bail out, else set RET for failure
+    [ -n "$NUM" ] || { 
+        RET=1
+        echo "$(basename "$0"): no such accession: $ACC" >&2
+        [ -n "$ONLY_ALL" ] && exit 1 || true
+        [ -n "$FAIL_FAST" ] && break || continue
+    }
+
+    # For the chatty-inclined
+    [ -z "$VERBOSE" ] || echo "$(basename "$0"): retrieving accession $ACC" >&2
+
+    # Apppend the number
+    SEQS="${SEQS}${SEP}${NUM}"
+    SEP=","
+done
+
+# Do the thing
+[ -n "$SEQS" ] && kma seq2fasta -t_db "$KMA_BASE" -seqs "$SEQS" >"$OUT_FILE"
+
+exit $RET
+
+# vim: sts=4:sw=4:et:si:ai
