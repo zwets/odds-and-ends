@@ -37,6 +37,8 @@ Usage: $(basename $0) [FILE ...]
 
 # Do the work
 
+[ "$1" != "-h" ] && [ "$1" != "--help" ] || usage_exit
+
 printf "Sample\tBases\tLength\tCoverage\n"
 
 if [ $# -eq 0 -o "$1" = "-" ]; then
