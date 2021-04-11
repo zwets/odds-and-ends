@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-#  assembly-coverage - quickly compute coverage from contig headers
+#  spades-assembly-coverage - compute coverage from contig headers
 #  Copyright (C) 2017  Marco van Zwetselaar <io@zwets.it>
 #
 #  This program is free software: you can redistribute it and/or modify
@@ -42,21 +42,21 @@ Usage: $(basename $0) [FILE ...]
 printf "Sample\tBases\tLength\tCoverage\n"
 
 if [ $# -eq 0 -o "$1" = "-" ]; then
-    awk -b -O -v OFS='\t' -v S="-" -F'_' '
+    awk -v OFS='\t' -v S="-" -F'_' '
+        BEGIN{ TB=0; TL=0 }
         /^>/ { L=$4; C=$6; B=L*C; TB=TB+B; TL=TL+L }
-        END  { if (TB<1E7||TL<1E6) TC="***"; else TC=TB/TL; 
-	       print S, TB, TL, TC 
-             }'
+        END  { TC = (TB<1E7||TL<1E6) ? TC="***" : TB/TL; 
+               print S, int(TB), int(TL), TC }'
 else
-    for f in "$@"; do
-        S="$(basename "$f")"
-        S="${f%.*}"
-        awk -b -O -v OFS='\t' -v S="$S" -F'_' '
+    for F in "$@"; do
+        S="$(basename "$F")"
+        S="${S%.*}"
+        awk -v OFS='\t' -v S="$S" -F'_' '
+            BEGIN{ TB=0; TL=0 }
             /^>/ { L=$4; C=$6; B=L*C; TB=TB+B; TL=TL+L }
-            END  { if (TB<1E7||TL<1E6) TC="***"; else TC=TB/TL; 
-                   print S, TB, TL, TC 
-             }
-        ' "$f" 
+            END  { TC = (TB<1E7||TL<1E6) ? TC="***" : TB/TL; 
+                   print S, int(TB), int(TL), TC }
+        ' "$F" 
     done
 fi
 
