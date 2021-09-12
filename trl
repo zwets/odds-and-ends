@@ -70,32 +70,15 @@ USE_X=0
 
 while [ $# -ne 0 -a "$(expr "$1" : '\(.\)..*')" = "-" ]; do
     case $1 in
-    --this=*)
-        THIS_SEQ="${1#"--this="}"
-        ;;
-    -i|--this)
-        shift
-        [ $# -ge 1 ] || usage_exit
-        THIS_SEQ="$1"
-        ;;
-    -r|--reverse)
-        REVERSE=1
-        ;;
-    -l|--tla)
-        TLA=1
-        ;;
-    -a|--amino)
-        AMINO=1
-        ;;
-    -d|--degenerate)
-        DEGENERATE=1
-        ;;
-    -x|--use-X)
-        USE_X=1
-        ;;
+    --this=*) THIS_SEQ="${1#"--this="}" ;;
+    -i|--this) shift && THIS_SEQ="$1" || usage_exit ;;
+    -r|--reverse) REVERSE=1 ;;
+    -l|--tla) TLA=1 ;;
+    -a|--amino) AMINO=1 ;;
+    -d|--degenerate) DEGENERATE=1 ;;
+    -x|--use-X) USE_X=1 ;;
     -f|--frame)
-        shift
-        [ $# -ge 1 ] || usage_exit
+        shift || usage_exit
         case $1 in
             -1|-2|-3)
                 F_REV=1
@@ -107,11 +90,8 @@ while [ $# -ne 0 -a "$(expr "$1" : '\(.\)..*')" = "-" ]; do
             *) err_exit "invalid frame value: $1" ;;
         esac
         ;;
-    -h|--help)
-        usage_exit 0
-        ;;
-    *) usage_exit
-        ;;
+    -h|--help) usage_exit 0 ;;
+    *) usage_exit ;;
     esac
     shift
 done
@@ -122,31 +102,31 @@ if [ -n "$THIS_SEQ" ]; then
     echo "$THIS_SEQ"
 elif [ $# -eq 1 ] && [ ! -f "$1" ]; then
     echo "$1"
-else 
+else
     cat "$@"
 fi | awk -b -O -v P="$(basename "$0")" -v S=$F_SHIFT -v C=$F_REV -v R=$REVERSE -v L=$TLA -v A=$AMINO -v D=$DEGENERATE -v X=$USE_X '
-    BEGIN { 
+    BEGIN {
         # TR rna -> aa
 
-        T["aaa"] = "K"; T["aac"] = "N"; T["aag"] = "K"; T["aau"] = "N"; 
-        T["aca"] = "T"; T["acc"] = "T"; T["acg"] = "T"; T["acu"] = "T"; 
-        T["aga"] = "R"; T["agc"] = "S"; T["agg"] = "R"; T["agu"] = "S"; 
-        T["aua"] = "I"; T["auc"] = "I"; T["aug"] = "M"; T["auu"] = "I"; 
+        T["aaa"] = "K"; T["aac"] = "N"; T["aag"] = "K"; T["aau"] = "N";
+        T["aca"] = "T"; T["acc"] = "T"; T["acg"] = "T"; T["acu"] = "T";
+        T["aga"] = "R"; T["agc"] = "S"; T["agg"] = "R"; T["agu"] = "S";
+        T["aua"] = "I"; T["auc"] = "I"; T["aug"] = "M"; T["auu"] = "I";
 
-        T["caa"] = "Q"; T["cac"] = "H"; T["cag"] = "Q"; T["cau"] = "H"; 
-        T["cca"] = "P"; T["ccc"] = "P"; T["ccg"] = "P"; T["ccu"] = "P"; 
-        T["cga"] = "R"; T["cgc"] = "R"; T["cgg"] = "R"; T["cgu"] = "R"; 
-        T["cua"] = "L"; T["cuc"] = "L"; T["cug"] = "L"; T["cuu"] = "L"; 
+        T["caa"] = "Q"; T["cac"] = "H"; T["cag"] = "Q"; T["cau"] = "H";
+        T["cca"] = "P"; T["ccc"] = "P"; T["ccg"] = "P"; T["ccu"] = "P";
+        T["cga"] = "R"; T["cgc"] = "R"; T["cgg"] = "R"; T["cgu"] = "R";
+        T["cua"] = "L"; T["cuc"] = "L"; T["cug"] = "L"; T["cuu"] = "L";
 
-        T["gaa"] = "E"; T["gac"] = "D"; T["gag"] = "E"; T["gau"] = "D"; 
-        T["gca"] = "A"; T["gcc"] = "A"; T["gcg"] = "A"; T["gcu"] = "A"; 
-        T["gga"] = "G"; T["ggc"] = "G"; T["ggg"] = "G"; T["ggu"] = "G"; 
-        T["gua"] = "V"; T["guc"] = "V"; T["gug"] = "V"; T["guu"] = "V"; 
+        T["gaa"] = "E"; T["gac"] = "D"; T["gag"] = "E"; T["gau"] = "D";
+        T["gca"] = "A"; T["gcc"] = "A"; T["gcg"] = "A"; T["gcu"] = "A";
+        T["gga"] = "G"; T["ggc"] = "G"; T["ggg"] = "G"; T["ggu"] = "G";
+        T["gua"] = "V"; T["guc"] = "V"; T["gug"] = "V"; T["guu"] = "V";
 
-        T["uaa"] = "*"; T["uac"] = "Y"; T["uag"] = "*"; T["uau"] = "Y"; 
-        T["uca"] = "S"; T["ucc"] = "S"; T["ucg"] = "S"; T["ucu"] = "S"; 
-        T["uga"] = "*"; T["ugc"] = "C"; T["ugg"] = "W"; T["ugu"] = "C"; 
-        T["uua"] = "L"; T["uuc"] = "F"; T["uug"] = "L"; T["uuu"] = "F"; 
+        T["uaa"] = "*"; T["uac"] = "Y"; T["uag"] = "*"; T["uau"] = "Y";
+        T["uca"] = "S"; T["ucc"] = "S"; T["ucg"] = "S"; T["ucu"] = "S";
+        T["uga"] = "*"; T["ugc"] = "C"; T["ugg"] = "W"; T["ugu"] = "C";
+        T["uua"] = "L"; T["uuc"] = "F"; T["uug"] = "L"; T["uuu"] = "F";
 
         # TR in short:
         # KNKN TTTT RSRS IIMI
@@ -239,7 +219,7 @@ fi | awk -b -O -v P="$(basename "$0")" -v S=$F_SHIFT -v C=$F_REV -v R=$REVERSE -
         exit 1
     }
     function trans(s,   t,r) {   # AWK local param idiom
-        
+
         if (IN_TYPE=="la") {
             t = R3[s]; if (!t) err_exit("unknown amino acid TLA: " s);
             s = t;
@@ -248,7 +228,7 @@ fi | awk -b -O -v P="$(basename "$0")" -v S=$F_SHIFT -v C=$F_REV -v R=$REVERSE -
         }
 
         if (R) {
-            t = D ? ID[s] : IT[s]; 
+            t = D ? ID[s] : IT[s];
             if (!t) err_exit("cannot reverse translate amino acid: " s);
             r = t;
         }
